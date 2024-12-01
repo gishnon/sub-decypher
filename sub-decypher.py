@@ -32,7 +32,7 @@ class cipherWord:
                     # Find all letters in dict word that are in cipher word duplicate letter indices
                     dict_letters = [ dict_word[index] for index in indices ]
                     # Add to new_dict if indices contain 1 unique letter
-                    if len(set(dict_letters)) == 1:
+                    if len(set(dict_letters)) == 1 and dict_word.count(dict_letters[0])==len(indices):
                         new_dict_list.append(dict_word)
                 #Prune dict_list to only positive results and move on to next letter with duplicates
                 dict_list = new_dict_list
@@ -53,42 +53,42 @@ class cipherWord:
     def filter_for_solved(self, full_map):
         # Filter dict_list against current cipher_map
         # Duplicate pruned by dupes list
-        pdb.set_trace()
+#        pdb.set_trace()
         words_by_map = [ word for word in self.words_by_dupes ]
         print("Available words based on dupe pattern: \n{}".format(words_by_map))
         keys = full_map.keys()
         values = full_map.values()
-        print("Map to be applied: \n\t{}\n\t{}".format(keys, values))
+#        print("Map to be applied: \n\t{}\n\t{}".format(keys, values))
         # Check if any keys exist in cipher
         present_keys = [ key for key in full_map.keys() if full_map[key] in self.cipher_word ]
         if len(present_keys) == 0:
             # Remove all words that do not contain a map key
-            print("Found no existing keys in word.")
+#            print("Found no existing keys in word: {}.".format(self.cipher_word))
             words_to_prune = [ word for key in full_map.keys() for word in words_by_map if key in word ]
         else:
             # Remove words whose letters do not match the current keymap
-            print("Found the following keys in word: \n{}".format(present_keys))
+#            print("Found the following keys in word: \n{}".format(present_keys))
             words_to_prune=[]
             for key in present_keys:
                 if full_map[key] in self.cipher_word:
-                    print("found value: {} in cipher_word: {}".format(full_map[key], self.cipher_word))
+#                    print("found value: {} in cipher_word: {}".format(full_map[key], self.cipher_word))
                     letter_data = enumerate(self.cipher_word)
                     # Find positions where the key exists
                     positions = [ letter_datum[0] for letter_datum in letter_data if letter_datum[1] == full_map[key] ]
-                    print("Value found at positions: {}".format(positions))
+#                    print("Value found at positions: {}".format(positions))
                     for position in positions:
                         for word in [ word for word in words_by_map if word[position] != key ]:
                             words_to_prune.append(word)
 
 #       # Prune words that do not match
-        print("Pruning the following words: \n{}".format(set(words_to_prune)))
+#        print("Pruning the following words: \n{}".format(set(words_to_prune)))
         for word in set(words_to_prune):
             words_by_map.remove(word)
         return(words_by_map)
 
     def choose_next_word(self, full_map):
         available_words = self.filter_for_solved(full_map)
-        print("Tried words: \n{}".format(self.tried_words))
+#        print("Tried words: \n{}".format(self.tried_words))
         for word in self.tried_words:
             available_words.remove(word)
         if len(available_words) == 0:
@@ -115,10 +115,13 @@ class cipherData:
         self.solve()
 
     def solve(self):
-        for i in range(0,1000):
+        solves = []
+        maps = []
+#        for i in range(0,3000):
+        while len(self.cipher_words[0].words_by_dupes) > len(self.cipher_words[0].tried_words):
             current_solve = [ word.current_guess for word in self.cipher_words ]
-
-            print(current_solve)
+#            print(current_solve)
+#            print("Base word: {}\tAvailable: {}\tTried: {}".format(self.cipher_words[0].cipher_word, len(self.cipher_words[0].words_by_dupes), len(self.cipher_words[0].tried_words)))
             #Loop through words.  Find first word with no current_guess
             for word in enumerate(self.cipher_words):
                 if word[1].current_guess == "":
@@ -146,6 +149,12 @@ class cipherData:
                     else:
 #                        print("Chose word: {}".format(word[1].current_guess))
                         break
+                if word[0] == len(self.cipher_words)-1 and word[1] != "":
+                    solves.append(current_solve)
+                    maps.append(self.get_full_map())
+                    word[1].reset()
+        for i in range(0, len(solves)):
+            print("Potential solve: \n{}\nMap: \n{}".format(solves[i],maps[i]))
 
     def translate(self, word):
         full_cipher = {}
