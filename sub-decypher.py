@@ -55,7 +55,7 @@ class cipherWord:
         # Duplicate pruned by dupes list
 #        pdb.set_trace()
         words_by_map = [ word for word in self.words_by_dupes ]
-        print("Available words based on dupe pattern: \n{}".format(words_by_map))
+#        print("Available words based on dupe pattern: \n{}".format(words_by_map))
         keys = full_map.keys()
         values = full_map.values()
 #        print("Map to be applied: \n\t{}\n\t{}".format(keys, values))
@@ -117,10 +117,9 @@ class cipherData:
     def solve(self):
         solves = []
         maps = []
-#        for i in range(0,3000):
         while len(self.cipher_words[0].words_by_dupes) > len(self.cipher_words[0].tried_words):
             current_solve = [ word.current_guess for word in self.cipher_words ]
-#            print(current_solve)
+            print(current_solve)
 #            print("Base word: {}\tAvailable: {}\tTried: {}".format(self.cipher_words[0].cipher_word, len(self.cipher_words[0].words_by_dupes), len(self.cipher_words[0].tried_words)))
             #Loop through words.  Find first word with no current_guess
             for word in enumerate(self.cipher_words):
@@ -154,7 +153,7 @@ class cipherData:
                     maps.append(self.get_full_map())
                     word[1].reset()
         for i in range(0, len(solves)):
-            print("Potential solve: \n{}\nMap: \n{}".format(solves[i],maps[i]))
+            print("Potential solve: \n{}\nMap: \n{}\n{}".format(solves[i],maps[i].keys(), maps[i].values()))
 
     def translate(self, word):
         full_cipher = {}
