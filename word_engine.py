@@ -46,3 +46,5 @@ class words:
         return [ word for word in List if word[position] == letter ]
     def letterNotAt(self, List, letter, position):
         return [ word for word in List if word[position] != letter ]
+    def apostropheWords(self):
+        return [ word for word in self.wordList["pos"] ] + [ word for word in self.wordList["cont"] ]

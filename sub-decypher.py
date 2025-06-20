@@ -10,7 +10,10 @@ class cipherWord:
     def __init__(self, cipher_word, all_words):
         self.cipher_word = cipher_word
         self.all_words = all_words
-        self.words_by_length = all_words.splitByLength("std", len(self.cipher_word))
+        if "'" in cipher_word:
+            self.words_by_length = [ word for word in all_words.apostropheWords() if len(word) == len(cipher_word) ]
+        else:
+            self.words_by_length = all_words.splitByLength("std", len(self.cipher_word))
         self.words_by_dupes = self.filter_for_duplicates()
         self.tried_words = []
         self.available_words = [ word for word in self.words_by_dupes ]
@@ -18,10 +21,11 @@ class cipherWord:
 
     def filter_for_duplicates(self):
         dict_list = self.words_by_length
-        # Look for duplicate letters in cipher_word
-        duplicates = [ letter for letter in self.cipher_word if self.cipher_word.count(letter) > 1 ]
+        # Look for duplicate letters in cipher_word (excluding apostrophes)
+        cipher_letters = [ letter for letter in self.cipher_word if letter != "'" ]
+        duplicates = [ letter for letter in cipher_letters if cipher_letters.count(letter) > 1 ]
         if len(duplicates) > 0:
-            # enumerate duplicate letters to get their indices
+            # enumerate all letters to get their indices
             letter_data = [ letter_datum for letter_datum in enumerate(self.cipher_word) ]
             for dup_letter in set(duplicates):
                 # Find all indices where each duplicate letter exist
@@ -37,23 +41,33 @@ class cipherWord:
                 #Prune dict_list to only positive results and move on to next letter with duplicates
                 dict_list = new_dict_list
         else:
-            # Remove all words that have dupes
+            # Remove all words that have dupes (excluding apostrophes from both cipher and dict words)
             new_dict_list = []
             for dict_word in self.words_by_length:
-                duplicates = [ letter for letter in dict_word if dict_word.count(letter) > 1 ]
+                dict_letters = [ letter for letter in dict_word if letter != "'" ]
+                duplicates = [ letter for letter in dict_letters if dict_letters.count(letter) > 1 ]
                 if len(duplicates) == 0:
                     new_dict_list.append(dict_word)
             dict_list = new_dict_list
         return(dict_list)
 
     def get_map(self):
-        cipher_map = dict(zip(self.current_guess, self.cipher_word))
+        # Create mapping excluding apostrophes (they appear in clear text)
+        if not self.current_guess:
+            return {}
+        cipher_letters = []
+        guess_letters = []
+        for i, char in enumerate(self.cipher_word):
+            if char != "'":
+                cipher_letters.append(char)
+                guess_letters.append(self.current_guess[i])
+        cipher_map = dict(zip(guess_letters, cipher_letters))
         return(cipher_map)
 
     def get_posmap(self, word, values):
         posmap = { value:[] for value in values }
         for index in range(0, len(word)):
-            if word[index] in values:
+            if word[index] in values and word[index] != "'":
                 posmap[word[index]].append(index)
         return posmap
 
@@ -67,6 +81,20 @@ class cipherWord:
         cipher_values = [ value for value in self.get_posmap(self.cipher_word, full_map.values()).values() ]
         words_to_prune=[]
         for word in words_by_map:
+            # Check if apostrophes match exactly in position
+            apostrophe_match = True
+            for i, char in enumerate(self.cipher_word):
+                if char == "'" and (i >= len(word) or word[i] != "'"):
+                    apostrophe_match = False
+                    break
+                elif char != "'" and i < len(word) and word[i] == "'":
+                    apostrophe_match = False
+                    break
+            
+            if not apostrophe_match:
+                words_to_prune.append(word)
+                continue
+                
             # Get values for all existing key positions in dictionary word
             word_values = [ value for value in self.get_posmap(word, full_map.keys()).values() ]
             # add to prunelist if they don't match
@@ -114,10 +142,11 @@ class cipherData:
         # First word should have the smallest list of available words
         self.solutions = []
         self.maps = []
+        progress = []
+        self.combos = 0
         self.current_solve = [ min(self.cipher_words, key=lambda cipherWord: len(cipherWord.words_by_dupes)) ]
         # Loop until first word choices are exhausted
         while len(self.current_solve[0].words_by_dupes) > len(self.current_solve[0].tried_words):
-            print("Current Guess: {}".format([ word.current_guess for word in self.cipher_words ]))
             # Check if last word in list has a current guess
             if len(self.current_solve[-1].current_guess) > 0:
                 # Find next word with smallest list of available words, and choose a word from its list
@@ -135,6 +164,14 @@ class cipherData:
             # Test value for found solution
             shortest_current_guess = min([len(word.current_guess) for word in self.cipher_words])
             if least_available_words == 0 or shortest_current_guess > 0: 
+                new_progress = [ word.current_guess for word in self.cipher_words ]
+                if progress != new_progress:
+                    progress = new_progress
+                    self.combos += 1
+                    if len(self.remaining_words()) < 3:
+                        for word in progress:
+                            print("\t{}".format(word),end='')
+                        print('')
                 if shortest_current_guess > 0:
                     # Potential solution found
                     self.solutions.append([ word.current_guess for word in self.cipher_words ])
@@ -150,21 +187,32 @@ class cipherData:
                         del self.current_solve[-1]
 
     def report(self):
-        print("Solution report:")
+        print("Solution report -----  Combos Tried: {}  Solutions Found: {}".format(self.combos, len(self.solutions)))
         if len(self.solutions) == 0:
             print("No solutions found")
         else:
+            print("Potential solutions")
             for index in range(0,len(self.solutions)):
-                print("Potential solution: \n\t{}\n\t{}".format(self.solutions[index], self.maps[index]))
+                for word in self.solutions[index]:
+                    print(" {}".format(word),end='')
+                print('')
+
 
 def get_cipher():
     arglen = len(sys.argv)
 
     if arglen == 1:
         cipher_phrase = input("Please enter a phrase to decode: ")
+        # Strip surrounding double quotes if present
+        if len(cipher_phrase) >= 2 and cipher_phrase[0] == '"' and cipher_phrase[-1] == '"':
+            cipher_phrase = cipher_phrase[1:-1]
         cipher_words = cipher_phrase.split()
     else:
-        cipher_words = sys.argv[1:]
+        # Join all arguments into single phrase and check for surrounding quotes
+        cipher_phrase = ' '.join(sys.argv[1:])
+        if len(cipher_phrase) >= 2 and cipher_phrase[0] == '"' and cipher_phrase[-1] == '"':
+            cipher_phrase = cipher_phrase[1:-1]
+        cipher_words = cipher_phrase.split()
     cipher = cipherData(cipher_words)
     return(cipher)
 
