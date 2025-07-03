@@ -168,8 +168,9 @@ class cipherData:
         
         # Check if output is to a terminal (not piped)
         if sys.stdout.isatty():
-            # Simple approach: clear the current line and print new content
-            print(f"\r\033[K{output_line}", end="", flush=True)
+            # Use simple carriage return and overwrite approach
+            # This works for most cases, even if line wraps it's still better than no clearing
+            print(f"\r{output_line}\033[K", end="", flush=True)
         else:
             # Output is piped, just print each line normally
             print(output_line)
