@@ -6,6 +6,7 @@ import string
 import itertools
 import pdb
 import shutil
+import time
 
 class cipherWord:
     def __init__(self, cipher_word, all_words):
@@ -125,10 +126,17 @@ class cipherWord:
 
 
 class cipherData:
-    def __init__(self, cipher_words):
+    def __init__(self, cipher_words, show_realtime=False):
         self.all_words = word_engine.words("/usr/share/dict/words")
         self.cipher_words = [ cipherWord(word, self.all_words) for word in cipher_words ]
+        self.show_realtime = show_realtime
+        self.total_word_attempts = 0
+        self.backtracking_events = 0
+        self.attempts_per_position = [0] * len(cipher_words)
+        self.abandons_at_depth = [0] * (len(cipher_words) + 1)  # +1 for depth 0
+        self.start_time = time.time()
         self.solve()
+        self.end_time = time.time()
         self.report()
 
     def get_full_map(self):
@@ -183,7 +191,6 @@ class cipherData:
         self.solutions = []
         self.maps = []
         progress = []
-        self.combos = 0
         self.current_solve = [ min(self.cipher_words, key=lambda cipherWord: len(cipherWord.words_by_dupes)) ]
         # Loop until first word choices are exhausted
         while len(self.current_solve[0].words_by_dupes) > len(self.current_solve[0].tried_words):
@@ -194,6 +201,11 @@ class cipherData:
                 self.current_solve.append(next_word)
             #choose word from available words
             self.current_solve[-1].choose_next_word()
+            self.total_word_attempts += 1
+            
+            # Track attempts per position
+            current_word_position = self.cipher_words.index(self.current_solve[-1])
+            self.attempts_per_position[current_word_position] += 1
             #Update map and solved filter
             current_map = self.get_full_map()
             for word in self.remaining_words(): 
@@ -207,21 +219,28 @@ class cipherData:
                 new_progress = [ word.current_guess for word in self.cipher_words ]
                 if progress != new_progress:
                     progress = new_progress
-                    self.combos += 1
                     # Find the index of the word that was just guessed
                     current_word_index = -1
                     for i, word in enumerate(self.cipher_words):
                         if word in self.current_solve and word.current_guess:
                             current_word_index = i
                             break
-                    # Always print the current progress
-                    self.print_progress(current_word_index)
+                    # Print progress only if real-time display is enabled
+                    if self.show_realtime:
+                        self.print_progress(current_word_index)
                 if shortest_current_guess > 0:
                     # Potential solution found
-                    print()  # Move to new line when solution is found
+                    if self.show_realtime:
+                        print()  # Move to new line when solution is found
                     self.solutions.append([ word.current_guess for word in self.cipher_words ])
                     self.maps.append(current_map)
                 # Perform a reset
+                self.backtracking_events += 1
+                
+                # Track abandon depth (how many words were placed before backtracking)
+                abandon_depth = len([w for w in self.current_solve if w.current_guess])
+                self.abandons_at_depth[abandon_depth] += 1
+                
                 for word in self.current_solve[::-1]:
                     current_map = self.get_full_map()
                     if len(word.available_words) > 0 or word == self.current_solve[0]:
@@ -232,21 +251,95 @@ class cipherData:
                         del self.current_solve[-1]
 
     def report(self):
-        print("\nSolution report -----  Combos Tried: {}  Solutions Found: {}".format(self.combos, len(self.solutions)))
+        elapsed_time = self.end_time - self.start_time
+        
+        # Get terminal width for formatting
+        try:
+            terminal_width = shutil.get_terminal_size().columns
+        except:
+            terminal_width = 80  # fallback
+        
+        # Print formatted statistics report
+        print(f"\n{'=' * min(60, terminal_width)}")
+        print("SOLUTION REPORT")
+        print(f"{'=' * min(60, terminal_width)}")
+        
+        # Format statistics in columns
+        stats = [
+            ("Word Attempts", f"{self.total_word_attempts:,}"),
+            ("Backtracking Events", f"{self.backtracking_events:,}"),
+            ("Time Elapsed", f"{elapsed_time:.2f}s"),
+            ("Solutions Found", f"{len(self.solutions):,}")
+        ]
+        
+        # Calculate column widths
+        max_label_width = max(len(stat[0]) for stat in stats)
+        max_value_width = max(len(stat[1]) for stat in stats)
+        
+        # Print statistics in aligned columns
+        for label, value in stats:
+            print(f"{label:<{max_label_width}} : {value:>{max_value_width}}")
+        
+        print(f"{'=' * min(60, terminal_width)}")
+        
+        # Print position analysis table
+        if len(self.cipher_words) > 1:  # Only show for multi-word phrases
+            print()
+            print("POSITION ANALYSIS")
+            print(f"{'=' * min(60, terminal_width)}")
+            
+            # Show total attempts per position (more meaningful than average)
+            # since each position gets attempted different numbers of times
+            
+            # Create table headers
+            print(f"{'Position':<8} | {'Length':<6} | {'Total Attempts':<13} | {'Abandons at Depth':<16}")
+            print(f"{'-' * 8} | {'-' * 6} | {'-' * 13} | {'-' * 16}")
+            
+            # Print data for each position/depth
+            max_rows = max(len(self.cipher_words), len(self.abandons_at_depth))
+            for i in range(max_rows):
+                pos_str = str(i + 1) if i < len(self.cipher_words) else ""
+                
+                if i < len(self.cipher_words):
+                    length_str = str(len(self.cipher_words[i].cipher_word))
+                else:
+                    length_str = "-"
+                
+                if i < len(self.attempts_per_position) and self.attempts_per_position[i] > 0:
+                    attempts_str = f"{self.attempts_per_position[i]:,}"
+                else:
+                    attempts_str = "-"
+                
+                if i < len(self.abandons_at_depth):
+                    abandon_str = f"{self.abandons_at_depth[i]:,}"
+                else:
+                    abandon_str = "-"
+                
+                print(f"{pos_str:<8} | {length_str:<6} | {attempts_str:<13} | {abandon_str:<16}")
+            
+            print(f"{'=' * min(60, terminal_width)}")
+        
         if len(self.solutions) == 0:
             print("No solutions found")
         else:
-            print("Potential solutions")
-            for index in range(0,len(self.solutions)):
-                for word in self.solutions[index]:
-                    print(" {}".format(word),end='')
-                print('')
+            if self.show_realtime:
+                print("(Solutions were displayed above during solving)")
+            else:
+                print("Potential solutions:")
+                for index in range(0,len(self.solutions)):
+                    for word in self.solutions[index]:
+                        print(" {}".format(word),end='')
+                    print('')
 
 
 def get_cipher():
-    arglen = len(sys.argv)
-
-    if arglen == 1:
+    # Check for flags
+    show_realtime = '--show-realtime' in sys.argv
+    
+    # Filter out flags from arguments
+    args = [arg for arg in sys.argv[1:] if not arg.startswith('--')]
+    
+    if len(args) == 0:
         cipher_phrase = input("Please enter a phrase to decode: ")
         # Strip surrounding double quotes if present
         if len(cipher_phrase) >= 2 and cipher_phrase[0] == '"' and cipher_phrase[-1] == '"':
@@ -254,11 +347,12 @@ def get_cipher():
         cipher_words = cipher_phrase.split()
     else:
         # Join all arguments into single phrase and check for surrounding quotes
-        cipher_phrase = ' '.join(sys.argv[1:])
+        cipher_phrase = ' '.join(args)
         if len(cipher_phrase) >= 2 and cipher_phrase[0] == '"' and cipher_phrase[-1] == '"':
             cipher_phrase = cipher_phrase[1:-1]
         cipher_words = cipher_phrase.split()
-    cipher = cipherData(cipher_words)
+    
+    cipher = cipherData(cipher_words, show_realtime=show_realtime)
     return(cipher)
 
 if __name__ == "__main__":
