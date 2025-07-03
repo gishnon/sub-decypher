@@ -5,6 +5,7 @@ import sys
 import string
 import itertools
 import pdb
+import shutil
 
 class cipherWord:
     def __init__(self, cipher_word, all_words):
@@ -135,6 +136,44 @@ class cipherData:
         full_map = { key:value for cipher_map in cipher_maps for key, value in cipher_map.items() }
         return(full_map)
 
+    def print_progress(self, current_word_index=-1):
+        # Print current progress with asterisks for unguessed words
+        # Highlight the current word being guessed
+        output_line = ""
+        for i, word in enumerate(self.cipher_words):
+            if i > 0:
+                output_line += " "
+            
+            if word.current_guess:
+                # Word has been guessed
+                if i == current_word_index:
+                    # Highlight current word with brackets
+                    output_line += "[{}]".format(word.current_guess)
+                else:
+                    output_line += word.current_guess
+            else:
+                # Word not guessed yet, show asterisks
+                asterisk_word = ""
+                for char in word.cipher_word:
+                    if char == "'":
+                        asterisk_word += "'"
+                    else:
+                        asterisk_word += "*"
+                
+                if i == current_word_index:
+                    # Highlight current word with brackets
+                    output_line += "[{}]".format(asterisk_word)
+                else:
+                    output_line += asterisk_word
+        
+        # Check if output is to a terminal (not piped)
+        if sys.stdout.isatty():
+            # Simple approach: clear the current line and print new content
+            print(f"\r\033[K{output_line}", end="", flush=True)
+        else:
+            # Output is piped, just print each line normally
+            print(output_line)
+
     def remaining_words(self):
         return [ word for word in self.cipher_words if word not in self.current_solve ]
 
@@ -168,12 +207,17 @@ class cipherData:
                 if progress != new_progress:
                     progress = new_progress
                     self.combos += 1
-                    if len(self.remaining_words()) < 3:
-                        for word in progress:
-                            print("\t{}".format(word),end='')
-                        print('')
+                    # Find the index of the word that was just guessed
+                    current_word_index = -1
+                    for i, word in enumerate(self.cipher_words):
+                        if word in self.current_solve and word.current_guess:
+                            current_word_index = i
+                            break
+                    # Always print the current progress
+                    self.print_progress(current_word_index)
                 if shortest_current_guess > 0:
                     # Potential solution found
+                    print()  # Move to new line when solution is found
                     self.solutions.append([ word.current_guess for word in self.cipher_words ])
                     self.maps.append(current_map)
                 # Perform a reset
@@ -187,7 +231,7 @@ class cipherData:
                         del self.current_solve[-1]
 
     def report(self):
-        print("Solution report -----  Combos Tried: {}  Solutions Found: {}".format(self.combos, len(self.solutions)))
+        print("\nSolution report -----  Combos Tried: {}  Solutions Found: {}".format(self.combos, len(self.solutions)))
         if len(self.solutions) == 0:
             print("No solutions found")
         else:
