@@ -126,10 +126,11 @@ class cipherWord:
 
 
 class cipherData:
-    def __init__(self, cipher_words, show_realtime=False):
+    def __init__(self, cipher_words, show_realtime=False, show_all_results=False):
         self.all_words = word_engine.words("/usr/share/dict/words")
         self.cipher_words = [ cipherWord(word, self.all_words) for word in cipher_words ]
         self.show_realtime = show_realtime
+        self.show_all_results = show_all_results
         self.total_word_attempts = 0
         self.backtracking_events = 0
         self.attempts_per_position = [0] * len(cipher_words)
@@ -137,6 +138,7 @@ class cipherData:
         self.start_time = time.time()
         self.solve()
         self.end_time = time.time()
+        self.ranked_solutions = self.rank_solutions()
         self.report()
 
     def get_full_map(self):
@@ -250,6 +252,148 @@ class cipherData:
                         word.hard_reset()
                         del self.current_solve[-1]
 
+    def get_word_frequency_score(self, word):
+        """Simple heuristic-based word frequency scoring."""
+        word_lower = word.lower()
+        
+        # Very common words get high scores
+        very_common = {'the', 'and', 'you', 'that', 'was', 'for', 'are', 'with', 'his', 'they',
+                      'this', 'have', 'from', 'not', 'had', 'but', 'what', 'can', 'out', 'other',
+                      'were', 'all', 'your', 'when', 'said', 'there', 'use', 'each', 'which',
+                      'she', 'how', 'their', 'will', 'about', 'if', 'up', 'time', 'has'}
+        if word_lower in very_common:
+            return 100
+            
+        # Common words get medium-high scores  
+        common = {'one', 'two', 'way', 'who', 'its', 'now', 'find', 'long', 'down', 'day', 'did',
+                 'get', 'come', 'made', 'may', 'part', 'over', 'new', 'sound', 'take', 'only',
+                 'little', 'work', 'know', 'place', 'year', 'live', 'back', 'give', 'most',
+                 'very', 'after', 'thing', 'our', 'just', 'name', 'good', 'sentence', 'man',
+                 'think', 'say', 'great', 'where', 'help', 'through', 'much', 'before', 'line',
+                 'right', 'too', 'mean', 'old', 'any', 'same', 'tell', 'boy', 'follow', 'came',
+                 'want', 'show', 'also', 'around', 'form', 'three', 'small', 'set', 'put', 'end',
+                 'why', 'again', 'turn', 'here', 'off', 'went', 'old', 'number', 'no', 'way',
+                 'could', 'people', 'my', 'than', 'first', 'water', 'been', 'call', 'make', 'into'}
+        if word_lower in common:
+            return 75
+        
+        # Length-based scoring for other words
+        length = len(word)
+        if length <= 2:
+            return 60  # Short words are often common
+        elif length <= 4:
+            return 50
+        elif length <= 6:
+            return 40
+        elif length <= 8:
+            return 30
+        else:
+            return 20  # Very long words are usually less common
+
+    def score_solution(self, solution):
+        """Score a complete solution based on word frequency."""
+        if not solution:
+            return 0
+        
+        # Sum individual word scores
+        word_scores = [self.get_word_frequency_score(word) for word in solution]
+        base_score = sum(word_scores)
+        
+        # Average to normalize for phrase length
+        return base_score / len(solution)
+
+    def rank_solutions(self):
+        """Rank all solutions by their frequency score."""
+        if not self.solutions:
+            return []
+        
+        # Calculate scores for all solutions
+        scored_solutions = []
+        for solution in self.solutions:
+            score = self.score_solution(solution)
+            scored_solutions.append((score, solution))
+        
+        # Sort by score (highest first)
+        scored_solutions.sort(key=lambda x: x[0], reverse=True)
+        
+        return scored_solutions
+
+    def display_paginated_results(self):
+        """Display results with pagination - space to continue, 'a' for all, any other key to quit."""
+        if not self.ranked_solutions:
+            return
+            
+        # If show_all_results is True, display all results without pagination
+        if self.show_all_results:
+            for score, solution in self.ranked_solutions:
+                print(f" {' '.join(solution)} (score: {score:.1f})")
+            return
+            
+        page_size = 20
+        current_index = 0
+        
+        while current_index < len(self.ranked_solutions):
+            # Display current page
+            end_index = min(current_index + page_size, len(self.ranked_solutions))
+            for i in range(current_index, end_index):
+                score, solution = self.ranked_solutions[i]
+                print(f" {' '.join(solution)} (score: {score:.1f})")
+            
+            current_index = end_index
+            
+            # Check if there are more results
+            if current_index < len(self.ranked_solutions):
+                remaining = len(self.ranked_solutions) - current_index
+                print(f"\n[{remaining} more results - Press SPACE to continue, 'a' for all, any other key to quit]")
+                
+                # Check if we're in an interactive terminal
+                if sys.stdin.isatty():
+                    try:
+                        # Read a single character
+                        import termios, tty
+                        fd = sys.stdin.fileno()
+                        old_settings = termios.tcgetattr(fd)
+                        try:
+                            tty.setraw(fd)
+                            char = sys.stdin.read(1)
+                        finally:
+                            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+                        
+                        # Check the character pressed
+                        if char == ' ':
+                            print()  # Add blank line before next page
+                            continue
+                        elif char.lower() == 'a':
+                            print("Showing all remaining results...")
+                            # Display all remaining results
+                            for i in range(current_index, len(self.ranked_solutions)):
+                                score, solution = self.ranked_solutions[i]
+                                print(f" {' '.join(solution)} (score: {score:.1f})")
+                            break
+                        else:
+                            print("Stopped.")
+                            break
+                            
+                    except (ImportError, OSError):
+                        # Fallback for systems without termios (like Windows)
+                        char = input().strip().lower()
+                        if char == 'a':
+                            print("Showing all remaining results...")
+                            # Display all remaining results
+                            for i in range(current_index, len(self.ranked_solutions)):
+                                score, solution = self.ranked_solutions[i]
+                                print(f" {' '.join(solution)} (score: {score:.1f})")
+                            break
+                        elif char != ' ' and char != '':
+                            print("Stopped.")
+                            break
+                else:
+                    # Non-interactive mode (piped input/output), show all results
+                    break
+            else:
+                # No more results
+                break
+
     def report(self):
         elapsed_time = self.end_time - self.start_time
         
@@ -325,16 +469,14 @@ class cipherData:
             if self.show_realtime:
                 print("(Solutions were displayed above during solving)")
             else:
-                print("Potential solutions:")
-                for index in range(0,len(self.solutions)):
-                    for word in self.solutions[index]:
-                        print(" {}".format(word),end='')
-                    print('')
+                print("Potential solutions (ranked by frequency):")
+                self.display_paginated_results()
 
 
 def get_cipher():
     # Check for flags
     show_realtime = '--show-realtime' in sys.argv
+    show_all_results = '--show-all-results' in sys.argv
     
     # Filter out flags from arguments
     args = [arg for arg in sys.argv[1:] if not arg.startswith('--')]
@@ -352,7 +494,7 @@ def get_cipher():
             cipher_phrase = cipher_phrase[1:-1]
         cipher_words = cipher_phrase.split()
     
-    cipher = cipherData(cipher_words, show_realtime=show_realtime)
+    cipher = cipherData(cipher_words, show_realtime=show_realtime, show_all_results=show_all_results)
     return(cipher)
 
 if __name__ == "__main__":
